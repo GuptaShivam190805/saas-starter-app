@@ -17,8 +17,78 @@ export async function GET(req: NextRequest) {
     const page = parseInt(searchParams.get("page") || "1");
     const search = searchParams.get("search") || ""
 
+    try {
+        const todos = await prisma.todo.findMany({
+            where: {
+                userId,
+                title: {
+                    contains: search,
+                    mode: "insensitive"
+                }
+            },
+            orderBy: {createdAt: "desc"},
+            take:   ITEMS_PER_PAGE,
+            skip: (page - 1 ) * ITEMS_PER_PAGE
+        })
+
+        const totalItems = await prisma.todo.count({
+            where: {
+                userId,
+                title: {
+                    contains: search,
+                    mode: "insensitive"
+                }
+            }
+        })
+
+        const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE)
+
+        return NextResponse.json({
+            todos,
+            currentPage: page,
+            totalPages
+        })
+    } catch (err) {
+        console.error("Error updating subscription", err)
+        return NextResponse.json(
+            { error: "Internal Server error"},
+            { status: 500 }
+        )
+    }
+
 }
 
-export async function POST() {
-    
+export async function POST(req: NextRequest) {
+    const { userId } = await auth();
+
+    if (!userId) {
+        return NextResponse.json({ error: "Unauthorized "}, {status: 401})
+    }
+
+    const user = await prisma.user.findUnique({
+        where: {id: userId},
+        include: {todos: true}
+    })
+
+    console.log(user);
+
+    if (!user) {
+        return NextResponse.json({
+            error: "User not found"
+        }, {status: 404})
+    }
+
+    if (!user.isSubscribed && user.todos.length > 3) {
+        return NextResponse.json({
+            error: "Free users can only create upto 3 todos. Please Susbcribe to our paid plans to write more awesome todos"
+        }, {status: 403})
+    }
+
+        const {title} = await req.json();
+        const todo = await prisma.todo.create({
+            data: {title, userId}
+        })
+
+        return NextResponse.json(todo, {status: 201})
+
 }
